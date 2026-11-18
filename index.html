@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebRTC 멀티플레이</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 15px;
+    background: #171923;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+.container {
+    max-width: 650px;
+    margin: auto;
+}
+
+h1 {
+    text-align: center;
+    color: #8ab4ff;
+}
+
+.box {
+    background: #252a38;
+    padding: 15px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+
+button {
+    background: #477bdb;
+    color: white;
+    border: none;
+    padding: 12px 15px;
+    border-radius: 7px;
+    cursor: pointer;
+    margin: 4px 0;
+}
+
+button:hover {
+    background: #6595ed;
+}
+
+textarea {
+    width: 100%;
+    height: 90px;
+    background: #171923;
+    color: white;
+    border: 1px solid #555d70;
+    padding: 10px;
+    border-radius: 7px;
+    margin: 7px 0;
+    resize: vertical;
+}
+
+#status {
+    color: #ffd166;
+    font-weight: bold;
+}
+
+.small {
+    color: #aab2c5;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* 게임 화면 */
+
+#arena {
+    width: 100%;
+    aspect-ratio: 5 / 3;
+    background-color: #303b35;
+    border: 3px solid #687c70;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+
+    background-image:
+        linear-gradient(#ffffff12 1px, transparent 1px),
+        linear-gradient(90deg, #ffffff12 1px, transparent 1px);
+
+    background-size: 10% 10%;
+}
+
+.player {
+    width: 5%;
+    aspect-ratio: 1;
+    position: absolute;
+    transform: translate(-50%, -50%);
+    border-radius: 7px;
+    border: 2px solid white;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    font-size: 13px;
+    font-weight: bold;
+    color: white;
+
+    pointer-events: none;
+}
+
+#hostPlayer {
+    background: #3478ed;
+}
+
+#guestPlayer {
+    background: #25a66a;
+}
+
+.player-label {
+    position: absolute;
+    transform: translate(-50%, 0);
+    font-size: 11px;
+    white-space: nowrap;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+#hostLabel {
+    color: #80adff;
+}
+
+#guestLabel {
+    color: #70e6a8;
+}
+
+/* 조이스틱 */
+
+#joystickArea {
+    height: 190px;
+    position: relative;
+    margin-top: 12px;
+    border-radius: 12px;
+    background: #1c2130;
+    touch-action: none;
+    overflow: hidden;
+    user-select: none;
+}
+
+#joystickHint {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    top: 12px;
+    color: #aab2c5;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+#joystickBase {
+    width: 120px;
+    height: 120px;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #394255;
+    border: 2px solid #69758c;
+    pointer-events: none;
+}
+
+#joystickKnob {
+    width: 52px;
+    height: 52px;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #6595ed;
+    border: 3px solid #b5d0ff;
+    box-shadow: 0 3px 10px #0006;
+    pointer-events: none;
+}
+
+.legend {
+    display: flex;
+    gap: 15px;
+    font-size: 13px;
+    margin-top: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>멀티플레이 이동 테스트</h1>
+
+<div class="box">
+    <h3>연결 상태</h3>
+    <p id="status">연결되지 않음</p>
+    <p id="roleText" class="small">역할: 없음</p>
+</div>
+
+<div class="box">
+    <h3>게임 화면</h3>
+
+    <div id="arena">
+        <div id="hostPlayer" class="player">H</div>
+        <div id="guestPlayer" class="player">G</div>
+
+        <div id="hostLabel" class="player-label">호스트</div>
+        <div id="guestLabel" class="player-label">참가자</div>
+    </div>
+
+    <div class="legend">
+        <span>🟦 호스트</span>
+        <span>🟩 참가자</span>
+    </div>
+</div>
+
+<div class="box">
+    <h3>조이스틱</h3>
+
+    <p class="small">
+        화면을 터치한 뒤 원하는 방향으로 밀어 보세요.
+        손가락을 놓으면 캐릭터가 멈춥니다.
+    </p>
+
+    <div id="joystickArea">
+        <div id="joystickHint">터치해서 이동하기</div>
+
+        <div id="joystickBase">
+            <div id="joystickKnob"></div>
+        </div>
+    </div>
+
+    <p class="small">
+        PC에서는 WASD 또는 방향키로 이동할 수 있습니다.
+    </p>
+</div>
+
+<div class="box">
+    <h3>1. 호스트</h3>
+
+    <button id="createButton">방 만들기</button>
+
+    <p>초대 코드</p>
+    <textarea id="offerCode" readonly></textarea>
+    <button id="copyOffer">초대 코드 복사</button>
+
+    <p>참가자의 응답 코드</p>
+    <textarea id="answerInput"
+        placeholder="응답 코드를 붙여넣으세요."></textarea>
+
+    <button id="acceptButton">응답 코드 적용</button>
+</div>
+
+<div class="box">
+    <h3>2. 참가자</h3>
+
+    <p>호스트의 초대 코드</p>
+    <textarea id="offerInput"
+        placeholder="초대 코드를 붙여넣으세요."></textarea>
+
+    <button id="joinButton">방 참가하기</button>
+
+    <p>응답 코드</p>
+    <textarea id="answerCode" readonly></textarea>
+
+    <button id="copyAnswer">응답 코드 복사</button>
+</div>
+
+<div class="box">
+    <button id="resetButton">연결 초기화</button>
+</div>
+
+</div>
+
+<script>
+
+// =====================================
+// 1. 기본 변수
+// =====================================
+
+let peer = null;
+let channel = null;
+let myRole = null;
+
+const positions = {
+    host: { x: 100, y: 120 },
+    guest: { x: 800, y: 480 }
+};
+
+const statusText = document.getElementById("status");
+const roleText = document.getElementById("roleText");
+
+const hostPlayer = document.getElementById("hostPlayer");
+const guestPlayer = document.getElementById("guestPlayer");
+
+const hostLabel = document.getElementById("hostLabel");
+const guestLabel = document.getElementById("guestLabel");
+
+
+// =====================================
+// 2. 화면 표시
+// =====================================
+
+function setStatus(text) {
+    statusText.textContent = text;
+}
+
+function renderPlayers() {
+
+    hostPlayer.style.left =
+        positions.host.x / 10 + "%";
+
+    hostPlayer.style.top =
+        positions.host.y / 6 + "%";
+
+    guestPlayer.style.left =
+        positions.guest.x / 10 + "%";
+
+    guestPlayer.style.top =
+        positions.guest.y / 6 + "%";
+
+    hostLabel.style.left =
+        positions.host.x / 10 + "%";
+
+    hostLabel.style.top =
+        positions.host.y / 6 + 4 + "%";
+
+    guestLabel.style.left =
+        positions.guest.x / 10 + "%";
+
+    guestLabel.style.top =
+        positions.guest.y / 6 + 4 + "%";
+
+}
+
+function updateRoleText() {
+    roleText.textContent =
+        "역할: " +
+        (myRole === "host" ? "호스트" :
+        myRole === "guest" ? "참가자" : "없음");
+}
+
+
+// =====================================
+// 3. 코드 인코딩 / 디코딩
+// =====================================
+
+function encode(data) {
+
+    const bytes = new TextEncoder().encode(
+        JSON.stringify(data)
+    );
+
+    let binary = "";
+
+    bytes.forEach(byte => {
+        binary += String.fromCharCode(byte);
+    });
+
+    return btoa(binary);
+
+}
+
+function decode(text) {
+
+    if (!text || !text.trim()) {
+        throw new Error("코드가 비어 있습니다.");
+    }
+
+    const binary = atob(text.trim());
+
+    const bytes = Uint8Array.from(
+        binary,
+        char => char.charCodeAt(0)
+    );
+
+    const data = JSON.parse(
+        new TextDecoder().decode(bytes)
+    );
+
+    if (!data.type || !data.sdp) {
+        throw new Error("올바르지 않은 연결 코드입니다.");
+    }
+
+    return data;
+
+}
+
+
+// =====================================
+// 4. WebRTC 생성
+// =====================================
+
+function createPeer() {
+
+    peer = new RTCPeerConnection({
+        iceServers: [
+            {
+                urls: "stun:stun.l.google.com:19302"
+            }
+        ]
+    });
+
+    peer.onconnectionstatechange = () => {
+
+        const state = peer.connectionState;
+
+        setStatus("연결 상태: " + state);
+
+        if (state === "failed") {
+            setStatus("연결 실패: 네트워크를 확인해 주세요.");
+        }
+
+    };
+
+    peer.ondatachannel = event => {
+
+        channel = event.channel;
+
+        setupChannel();
+
+    };
+
+}
+
+
+// =====================================
+// 5. 데이터 채널
+// =====================================
+
+function setupChannel() {
+
+    channel.onopen = () => {
+
+        setStatus("연결 성공!");
+
+        sendPosition();
+
+    };
+
+    channel.onclose = () => {
+        setStatus("연결 종료");
+    };
+
+    channel.onmessage = event => {
+
+        try {
+
+            const data = JSON.parse(event.data);
+
+            if (data.type !== "position") return;
+
+            if (
+                data.role !== "host" &&
+                data.role !== "guest"
+            ) return;
+
+            if (
+                !Number.isFinite(data.x) ||
+                !Number.isFinite(data.y)
+            ) return;
+
+            positions[data.role].x =
+                Math.max(20, Math.min(980, data.x));
+
+            positions[data.role].y =
+                Math.max(20, Math.min(580, data.y));
+
+            renderPlayers();
+
+        } catch (error) {
+
+            console.error("수신 오류:", error);
+
+        }
+
+    };
+
+}
+
+
+// =====================================
+// 6. 위치 전송
+// =====================================
+
+function sendPosition() {
+
+    if (!myRole) return;
+
+    if (!channel || channel.readyState !== "open") {
+        return;
+    }
+
+    const pos = positions[myRole];
+
+    channel.send(JSON.stringify({
+        type: "position",
+        role: myRole,
+        x: pos.x,
+        y: pos.y
+    }));
+
+}
+
+
+// =====================================
+// 7. 조이스틱
+// =====================================
+
+const joystickArea =
+    document.getElementById("joystickArea");
+
+const joystickBase =
+    document.getElementById("joystickBase");
+
+const joystickKnob =
+    document.getElementById("joystickKnob");
+
+let joystickActive = false;
+let joystickPointerId = null;
+
+let joystickCenter = {
+    x: 0,
+    y: 0
+};
+
+let joystickDirection = {
+    x: 0,
+    y: 0
+};
+
+const joystickRadius = 60;
+
+
+// 조이스틱 생성
+function showJoystick(clientX, clientY) {
+
+    const rect = joystickArea.getBoundingClientRect();
+
+    joystickCenter.x = clientX - rect.left;
+    joystickCenter.y = clientY - rect.top;
+
+    joystickBase.style.left =
+        joystickCenter.x + "px";
+
+    joystickBase.style.top =
+        joystickCenter.y + "px";
+
+}
+
+
+// 조이스틱 방향 갱신
+function updateJoystick(clientX, clientY) {
+
+    const rect = joystickArea.getBoundingClientRect();
+
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    let dx = x - joystickCenter.x;
+    let dy = y - joystickCenter.y;
+
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    const limitedDistance =
+        Math.min(distance, joystickRadius);
+
+    if (distance > 0) {
+
+        dx /= distance;
+        dy /= distance;
+
+    }
+
+    joystickDirection.x =
+        dx * limitedDistance / joystickRadius;
+
+    joystickDirection.y =
+        dy * limitedDistance / joystickRadius;
+
+    joystickKnob.style.left =
+        (50 + dx * limitedDistance / 26) + "%";
+
+    joystickKnob.style.top =
+        (50 + dy * limitedDistance / 26) + "%";
+
+}
+
+
+// 터치 시작
+joystickArea.addEventListener("pointerdown", event => {
+
+    if (joystickActive) return;
+
+    if (!myRole) {
+        setStatus("먼저 방에 접속해 주세요.");
+        return;
+    }
+
+    event.preventDefault();
+
+    joystickActive = true;
+    joystickPointerId = event.pointerId;
+
+    joystickArea.setPointerCapture(event.pointerId);
+
+    showJoystick(event.clientX, event.clientY);
+
+    updateJoystick(event.clientX, event.clientY);
+
+});
+
+
+// 터치 이동
+joystickArea.addEventListener("pointermove", event => {
+
+    if (!joystickActive) return;
+
+    if (event.pointerId !== joystickPointerId) return;
+
+    event.preventDefault();
+
+    updateJoystick(event.clientX, event.clientY);
+
+});
+
+
+// 터치 종료
+function stopJoystick(event) {
+
+    if (!joystickActive) return;
+
+    if (
+        event &&
+        event.pointerId !== undefined &&
+        event.pointerId !== joystickPointerId
+    ) return;
+
+    joystickActive = false;
+    joystickPointerId = null;
+
+    joystickDirection.x = 0;
+    joystickDirection.y = 0;
+
+    joystickBase.style.left = "50%";
+    joystickBase.style.top = "50%";
+
+    joystickKnob.style.left = "50%";
+    joystickKnob.style.top = "50%";
+
+}
+
+joystickArea.addEventListener("pointerup", stopJoystick);
+joystickArea.addEventListener("pointercancel", stopJoystick);
+joystickArea.addEventListener("lostpointercapture", stopJoystick);
+
+
+// =====================================
+// 8. 키보드 입력
+// =====================================
+
+const pressedKeys = new Set();
+
+document.addEventListener("keydown", event => {
+
+    const key = event.key.toLowerCase();
+
+    if (
+        event.target.tagName === "INPUT" ||
+        event.target.tagName === "TEXTAREA"
+    ) return;
+
+    if ([
+        "arrowup",
+        "arrowdown",
+        "arrowleft",
+        "arrowright",
+        "w", "a", "s", "d"
+    ].includes(key)) {
+
+        event.preventDefault();
+
+        pressedKeys.add(key);
+
+    }
+
+});
+
+document.addEventListener("keyup", event => {
+
+    pressedKeys.delete(event.key.toLowerCase());
+
+});
+
+window.addEventListener("blur", () => {
+    pressedKeys.clear();
+    joystickDirection.x = 0;
+    joystickDirection.y = 0;
+});
+
+
+// =====================================
+// 9. 캐릭터 이동
+// =====================================
+
+const moveSpeed = 240;
+
+function updateMovement(deltaTime) {
+
+    if (!myRole) return;
+
+    let dx = joystickDirection.x;
+    let dy = joystickDirection.y;
+
+    // 키보드 입력
+    if (
+        pressedKeys.has("arrowup") ||
+        pressedKeys.has("w")
+    ) dy -= 1;
+
+    if (
+        pressedKeys.has("arrowdown") ||
+        pressedKeys.has("s")
+    ) dy += 1;
+
+    if (
+        pressedKeys.has("arrowleft") ||
+        pressedKeys.has("a")
+    ) dx -= 1;
+
+    if (
+        pressedKeys.has("arrowright") ||
+        pressedKeys.has("d")
+    ) dx += 1;
+
+    // 대각선 속도 보정
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    if (length > 1) {
+
+        dx /= length;
+        dy /= length;
+
+    }
+
+    if (length < 0.01) return;
+
+    const pos = positions[myRole];
+
+    pos.x += dx * moveSpeed * deltaTime;
+    pos.y += dy * moveSpeed * deltaTime;
+
+    pos.x = Math.max(20, Math.min(980, pos.x));
+    pos.y = Math.max(20, Math.min(580, pos.y));
+
+    renderPlayers();
+
+}
+
+
+// =====================================
+// 10. 게임 루프
+// =====================================
+
+let previousTime = 0;
+let lastSendTime = 0;
+
+function gameLoop(timestamp) {
+
+    if (!previousTime) {
+        previousTime = timestamp;
+    }
+
+    let deltaTime =
+        (timestamp - previousTime) / 1000;
+
+    deltaTime = Math.min(deltaTime, 0.05);
+
+    previousTime = timestamp;
+
+    updateMovement(deltaTime);
+
+    if (timestamp - lastSendTime >= 50) {
+
+        sendPosition();
+
+        lastSendTime = timestamp;
+
+    }
+
+    requestAnimationFrame(gameLoop);
+
+}
+
+
+// =====================================
+// 11. ICE 후보 수집
+// =====================================
+
+function waitForIce() {
+
+    return new Promise((resolve, reject) => {
+
+        if (peer.iceGatheringState === "complete") {
+            resolve();
+            return;
+        }
+
+        const timeout = setTimeout(() => {
+
+            peer.removeEventListener(
+                "icegatheringstatechange",
+                checkState
+            );
+
+            reject(new Error("ICE 후보 수집 시간 초과"));
+
+        }, 30000);
+
+        function checkState() {
+
+            if (peer.iceGatheringState === "complete") {
+
+                clearTimeout(timeout);
+
+                peer.removeEventListener(
+                    "icegatheringstatechange",
+                    checkState
+                );
+
+                resolve();
+
+            }
+
+        }
+
+        peer.addEventListener(
+            "icegatheringstatechange",
+            checkState
+        );
+
+    });
+
+}
+
+
+// =====================================
+// 12. 호스트 방 생성
+// =====================================
+
+async function createRoom() {
+
+    try {
+
+        resetConnection(false);
+
+        myRole = "host";
+
+        updateRoleText();
+
+        positions.host = { x: 100, y: 120 };
+        positions.guest = { x: 800, y: 480 };
+
+        renderPlayers();
+
+        createPeer();
+
+        channel = peer.createDataChannel("game");
+
+        setupChannel();
+
+        const offer = await peer.createOffer();
+
+        await peer.setLocalDescription(offer);
+
+        setStatus("초대 코드 생성 중...");
+
+        await waitForIce();
+
+        document.getElementById("offerCode").value =
+            encode(peer.localDescription);
+
+        setStatus("초대 코드 생성 완료!");
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert("방 생성 실패: " + error.message);
+
+    }
+
+}
+
+
+// =====================================
+// 13. 참가자 방 참가
+// =====================================
+
+async function joinRoom() {
+
+    try {
+
+        const offer = decode(
+            document.getElementById("offerInput").value
+        );
+
+        resetConnection(false);
+
+        myRole = "guest";
+
+        updateRoleText();
+
+        positions.host = { x: 100, y: 120 };
+        positions.guest = { x: 800, y: 480 };
+
+        renderPlayers();
+
+        createPeer();
+
+        await peer.setRemoteDescription(offer);
+
+        const answer = await peer.createAnswer();
+
+        await peer.setLocalDescription(answer);
+
+        setStatus("응답 코드 생성 중...");
+
+        await waitForIce();
+
+        document.getElementById("answerCode").value =
+            encode(peer.localDescription);
+
+        setStatus("응답 코드 생성 완료!");
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert("참가 실패: " + error.message);
+
+    }
+
+}
+
+
+// =====================================
+// 14. 호스트 응답 적용
+// =====================================
+
+async function acceptAnswer() {
+
+    try {
+
+        if (!peer) {
+            alert("먼저 방을 만들어 주세요.");
+            return;
+        }
+
+        if (peer.remoteDescription) {
+            alert("이미 응답 코드가 적용되었습니다.");
+            return;
+        }
+
+        const answer = decode(
+            document.getElementById("answerInput").value
+        );
+
+        await peer.setRemoteDescription(answer);
+
+        setStatus("연결을 기다리는 중...");
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert("응답 적용 실패: " + error.message);
+
+    }
+
+}
+
+
+// =====================================
+// 15. 코드 복사
+// =====================================
+
+async function copyText(id) {
+
+    const text = document.getElementById(id).value;
+
+    if (!text) {
+        alert("복사할 코드가 없습니다.");
+        return;
+    }
+
+    try {
+
+        await navigator.clipboard.writeText(text);
+
+        alert("복사 완료!");
+
+    } catch (error) {
+
+        const textarea = document.getElementById(id);
+
+        textarea.select();
+
+        alert("직접 복사해 주세요.");
+
+    }
+
+}
+
+
+// =====================================
+// 16. 연결 초기화
+// =====================================
+
+function resetConnection(clearMessages = true) {
+
+    // 연결 종료
+    if (channel) {
+
+        channel.onopen = null;
+        channel.onclose = null;
+        channel.onmessage = null;
+
+        channel.close();
+
+        channel = null;
+
+    }
+
+    if (peer) {
+
+        peer.close();
+
+        peer = null;
+
+    }
+
+    myRole = null;
+
+    // 입력 초기화
+    joystickActive = false;
+    joystickPointerId = null;
+
+    joystickDirection.x = 0;
+    joystickDirection.y = 0;
+
+    pressedKeys.clear();
+
+    // 화면 초기화
+    joystickBase.style.left = "50%";
+    joystickBase.style.top = "50%";
+
+    joystickKnob.style.left = "50%";
+    joystickKnob.style.top = "50%";
+
+    positions.host = { x: 100, y: 120 };
+    positions.guest = { x: 800, y: 480 };
+
+    renderPlayers();
+
+    updateRoleText();
+
+    if (clearMessages) {
+
+        document.getElementById("offerCode").value = "";
+        document.getElementById("answerCode").value = "";
+        document.getElementById("answerInput").value = "";
+        document.getElementById("offerInput").value = "";
+
+    }
+
+    setStatus("연결되지 않음");
+
+}
+
+
+// =====================================
+// 17. 버튼 연결
+// =====================================
+
+document.getElementById("createButton")
+    .addEventListener("click", createRoom);
+
+document.getElementById("joinButton")
+    .addEventListener("click", joinRoom);
+
+document.getElementById("acceptButton")
+    .addEventListener("click", acceptAnswer);
+
+document.getElementById("copyOffer")
+    .addEventListener("click", () => copyText("offerCode"));
+
+document.getElementById("copyAnswer")
+    .addEventListener("click", () => copyText("answerCode"));
+
+document.getElementById("resetButton")
+    .addEventListener("click", () => resetConnection());
+
+
+// =====================================
+// 18. 게임 시작
+// =====================================
+
+renderPlayers();
+
+requestAnimationFrame(gameLoop);
+
+</script>
+
+</body>
+</html>
